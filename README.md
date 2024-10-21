@@ -39,17 +39,30 @@ In addition to the files mentioned above, Picture_Classifier contains two other 
 You can tune the application behaviour with following constants in constants.py file:
 
 OBJECT_CLASSIFIER_FOLDER = the path to the folder where Picture_Classifier stores the serialized Object_finder models.
+
 PICTURE_CLASSIFIER_NAME = filename to save the serialized Picture_classifier model.
+
 OBJECT_BATCH_SIZE = the number of data rows of studying the Object_finder model in one cycle.
+
 PICTURE_BATCH_SIZE = The number of data rows of studying the Picture_classifier model in one cycle.
+
 OBJECT_IMG_HEIGHT = the height of the image in pixels to which the Object_finder model adjusts the recognizable image before recognition. 
+
 OBJECT_IMG_WIDTH = the width of the image in pixels to which the Object_finder model adjusts the recognizable image before recognition.
+
 OBJECT_TILE_OVERLAP_COEFFICIENT = an integer that tells how many overlapping identifications an image is recognized in one scale. 
+
 OBJECT_MULTI_TILE_SIZE_MULTIPLIER = a real number that acts as a coefficient when moving from one scale to another. 
+
 OBJECT_EPOCHS = an integer that tells how many cycles the Object_finder model studies before intermediate storage, on the basis of which the study is continued.  
+
 OBJECT_THRESHOLD = a positive real number between [0, 1], indicating the probability at which the Object_finder model must at least identify an object in order to classify it as identified.
+
 PICTURE_NUMBER_OF_HIDDEN_NEURONS = the number of neurons in the Picture_classifier model.
+
 PICTURE_LEARNING_RATE = a positive (small) real number that adjusts the TensorFlow Keras optimizer's gradient calculation.
+
 PICTURE_TRAINING_STEPS = an integer that tells how many cycles the Picture_classifier model learns the classification in total.
+
 PICTURE_DISPLAY_STEP = an integer after how many cycles the Picture_classifier model reports its learning to the command line.
 
