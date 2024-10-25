@@ -1,6 +1,6 @@
 # Picture_Classifier
 
-Artificial Intelligence application to classify random pictures according to the objects they show. Uses neural network models recognize objects from a picture and then classifies the picture according to the objects it contains. Picture_Classifier is an application for sorting image files, which sorts images based on image content using neural network artificial intelligence. The application is written in the Python programming language using e.g. tensorflow, keras, numpy, scikit-learn and pandas libraries. The user interface of the application is command line.
+Artificial Intelligence application to classify random pictures according to the objects they show. Uses neural network models to recognize objects from a picture and then classifies the picture according to the objects it contains. Picture_Classifier is an application for sorting image files, which sorts images based on image content using neural network artificial intelligence. The application is written in the Python programming language using e.g. TensorFlow, Keras, NumPy, Scikit-learn and Pandas libraries. The user interface of the application is command line.
 
 ## Principle
 
