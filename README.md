@@ -38,15 +38,19 @@ Picture_Classifier contains several AI models: one for sorting and one for ident
 
 - When the objects in the image file have been identified and their numbers have been calculated, it is necessary to decide in which category the image file will be placed based on this information. This is done with the code in the pictureclassifier.py file.
 
-In addition to the files mentioned above, Picture_Classifier contains two other source code files:
+In addition to the files mentioned above, Picture_Classifier contains four other source code files:
 
 - Main.py contains the main() function of the application (even though there is no main function in Python) and a loop where the user of the application can tinker.
 
-- The constants.py file contains all the constants defined in the application. The values ​​of these variables can only be changed inside the Constants.py file!
+- The constants.py file contains all the constants defined in the application. The values ​​of these variables can only be changed inside the Constants.py file.
+
+- Image_dataset_utils.py is a Tensorflow library source code, which is needed in the project so we can directly use paths_and_labels_to_dataset and image_dataset_from_directory methods.
+
+- Dataset_utils.py is a Tensorflow libraray source code, which is needed to get image_dataset_utils.py to work.
 
 ## Tuning
 
-You can tune the application behaviour with following constants in constants.py file:
+Application behaviour can be tuned with following constants in constants.py file:
 
 OBJECT_CLASSIFIER_FOLDER = the path to the folder where Picture_Classifier stores the serialized Object_finder models.
 
