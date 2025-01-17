@@ -2,6 +2,16 @@
 
 Artificial Intelligence application to classify random pictures according to the objects they show. Uses neural network models to recognize objects from a picture and then classifies the picture according to the objects it contains. Picture_Classifier is an application for sorting image files, which sorts images based on image content using neural network artificial intelligence. The application is written in the Python programming language using e.g. TensorFlow, Keras, NumPy, Scikit-learn and Pandas libraries. The user interface of the application is command line.
 
+Currently Picture_Classifier can classify only RGB(24bit) JPG files. The application is designed to be able to classify any image file format, but there's not implementation yet.
+
+At the moment object detectors work as they should, but actual picture classification according to the detected objects doesn't. There are at least two reasons for that:
+
+- There aren't enough training material to teach classification: the only material is for object detectors, but that alone is not enough for teaching picture classification.
+
+- Current implementation applies transfer learning to the picture classification model, so when you create a new object detector model, picture classification model doesn't need to be created from scratch. This is how it is implemented now, although it should not be possible: it is possible to add new classes to the model, but it is not possible to add new features to the dataset without creating the model from scratch.
+
+I don't like the idea to add extra training material or do everything from scratch every time you add new object detector model, so perhaps I implement picture classification without machine learning in the future. 
+
 ## Principle
 
 The basic idea is for the user of the application to create a folder with a mixed set of image files and another folder where the application creates subfolders, the application sorts and moves the image files from the original folder. In order for the application to be able to perform this sorting, it needs to know the sorting categories and learn from the model data what kind of image file is sorted into which category. You have to recognize different objects from the pictures, such as cars, faces, flowers, dogs, etc.
@@ -39,6 +49,8 @@ In addition to the files mentioned above, Picture_Classifier contains two other 
 You can tune the application behaviour with following constants in constants.py file:
 
 OBJECT_CLASSIFIER_FOLDER = the path to the folder where Picture_Classifier stores the serialized Object_finder models.
+
+OBJECT_CLASSIFIER_IMPERTINENT_CLASS_NAME = subcategory level name for object classifications, which are to be excluded from process. This name must be different than any folder name in training material.
 
 PICTURE_CLASSIFIER_NAME = filename to save the serialized Picture_classifier model.
 

@@ -12,10 +12,7 @@ import tensorflow as tf
 from tensorflow.compiler.tf2xla.python.xla import random_normal
 from tensorflow.python.ops.variables import trainable_variables
 
-
 import constants
-#from mybaseoptimizer import My_base_optimizer
-#from mysgd import My_SGD
 from objectclassifier import Object_classifier
 from objectfinder import Recognized_object
 
@@ -23,14 +20,15 @@ class Picture_classifier:
     
     # Constructor creates a new Picture-classifier class instance. Use static deserialize method to 
     # deseralize Picture-classifier class instance from file instead of creating a new Picture_classifier.
-    def __init__(self, path:str, destroy_previous=False) -> None:
+    def __init__(self, path:str, destroy_previous:bool=False, impertinent:bool=False) -> None:
+        path = path.strip('\"')
         self.__encoder = ce.BinaryEncoder(cols="classification")
         self.__optimizer = tf.keras.optimizers.SGD(learning_rate=constants.PICTURE_LEARNING_RATE)
         self.__classes = self.__get_classes(path)
         self.__object_classifier = Object_classifier()
         self.__weights = None
         self.__biases = None
-        self.__model = self.__create_picture_classifier_model(path, destroy_previous)  
+        self.__model = self.__create_or_train_picture_classifier_model(path, destroy_previous, impertinent)  
         self.__features = self.__object_classifier.get_categories()
       
     # Before destructing this Picture_classifier class instance, we need to serialize it.
@@ -51,10 +49,20 @@ class Picture_classifier:
     # Class names are the top folder names.
     def __get_classes(self, path:str) -> list:
         classes = []
+
+        # Check does picture_classifier have classes already.
+        try:
+            classes.extend(self.__classes)
+        except:
+            pass
+
+        # Get classes from the path if they are not already in the classes list.
+        path = path.strip('\"')
         items = os.listdir(path)
         for item in items:
-            if os.path.isdir(os.path.join(path, item)):    
-                classes.append(item)
+            if os.path.isdir(os.path.join(path, item)): 
+                if item not in classes:
+                    classes.append(item)
         return classes
 
     # Private class method to create a trained neural network model to classify pictures. You need to have a
@@ -64,20 +72,19 @@ class Picture_classifier:
     #           folders for object classification I.E. Object_finders: folder names are main_categories
     #       folders for further object classification inside an Object_finder: folder names are sub_categories
     #   picture files for model training
-    def __create_picture_classifier_model(self, path:str, destroy_previous=False) -> None:       
-        
-        # First make all object finders or update them. This makes object classifier trained.
-        for classpath1 in self.__classes:
-            classpath1 = os.path.join(path, classpath1)
-            items1 =  os.listdir(classpath1)
-            for item1 in items1:
-                classpath2 = os.path.join(classpath1, item1)
-                if os.path.isdir(classpath2): 
-                    self.__object_classifier.make_object_finder(classpath2, destroy_previous)    
-                    
-        # KORJAA Alla oleva on testausta varten!
-        self.__object_classifier.serialize_object_finders()
-        # Yllä oleva on testausta varten!
+    def __create_or_train_picture_classifier_model(self, path:str, destroy_previous:bool=False, impertinent:bool=False) -> None:        
+        path = path.strip('\"')
+
+        # First make all object finders or update them. This makes object classifiers trained.
+        for classpath in self.__classes:
+            classpath = os.path.join(path, classpath)
+            try:
+                object_finders = os.listdir(classpath)
+                for object_finder in object_finders:
+                    object_finder_path = os.path.join(classpath, object_finder)
+                    self.__object_classifier.make_object_finder(object_finder_path, destroy_previous, impertinent)
+            except Exception as err:
+                pass
                     
         # Second gather data to train picture classifier: predict a classification for every picture in picture
         # files for model training and make a dataset, which has a column for each feature (sub_category) and 
@@ -88,8 +95,9 @@ class Picture_classifier:
         for root, dirs, files in os.walk(path):
             for file in files:
                 filepath = os.path.join(root, file)
-                recognized_objects = self.__object_classifier.multi_tile_recognize_objects(filepath)
+                recognized_objects = self.__object_classifier.recognize_objects_str(filepath)[0]
                 row_of_features = self.__parse_recognized_objects_dict(recognized_objects)
+
                 for feature in row_of_features:
                     value = [row_of_features[feature]]
                     old_values = data[feature]
@@ -108,24 +116,6 @@ class Picture_classifier:
                 else:
                     old_values.append(value)
         dataset = pa.DataFrame(data)
-        
-        # KORJAA Alla oleva on testausta varten!
-        
-        try:
-            with open("testidataset.pkl", "wb+") as out_file:
-                pickle.dump(dataset, out_file)
-        except Exception as err:
-            print(f"Unexpected error when serializing testidataset: {err=}, {type(err)=}")      
-        
-        '''
-        dataset = None
-        try:
-            with open("testidataset.pkl", "rb") as in_file:
-                dataset = pickle.load(in_file)
-        except Exception as err:
-            print(f"Unexpected error when deserializing testidataset: {err=}, {type(err)=}")   
-        '''
-        #Yllä oleva on testausta varten!
         
         # The dependent variable y is not numerical value in a dataset but a class name. We use binaryencoder to 
         # change it numeric. In order to get back the class name, first need to save the class names in a list
@@ -167,17 +157,54 @@ class Picture_classifier:
         train_data = tf.data.Dataset.from_tensor_slices((X_train, y_train))
         train_data = train_data.repeat().shuffle(60000).batch(batch_size).prefetch(1)        
         
-        # Store layers weight and bias: use random value generator to initialize weights.
-        random_normal = tf.random_normal_initializer()
-        self.__weights = {
-            "h": tf.Variable(tf.cast(tf.Variable(random_normal([num_features, n_hidden])), dtype="float64"), trainable=True), 
-            "out": tf.Variable(tf.cast(tf.Variable(random_normal([n_hidden, num_binary_columns])), dtype="float64"), trainable=True)
-        }
-        self.__biases = {
-            "b": tf.Variable(tf.cast(tf.Variable(tf.zeros([n_hidden])), dtype="float64"), trainable=True),
-            "out": tf.Variable(tf.cast(tf.Variable(tf.zeros([num_binary_columns])), dtype="float64"), trainable=True)
-        }
-        
+        if destroy_previous:
+
+            # Store layers weight and bias: use random value generator to initialize weights.
+            random_normal = tf.random_normal_initializer()
+            '''
+            self.__weights = {
+                "h": tf.Variable(tf.cast(tf.Variable(random_normal([num_features, n_hidden])), dtype="float64"), trainable=True), 
+                "out": tf.Variable(tf.cast(tf.Variable(random_normal([n_hidden, num_binary_columns])), dtype="float64"), trainable=True)
+            }
+            self.__biases = {
+                "b": tf.Variable(tf.cast(tf.Variable(tf.zeros([n_hidden])), dtype="float64"), trainable=True),
+                "out": tf.Variable(tf.cast(tf.Variable(tf.zeros([num_binary_columns])), dtype="float64"), trainable=True)
+            }
+            '''
+            random_normal = tf.random_normal_initializer()
+            self.__weights = {
+                "h1": tf.Variable(tf.cast(tf.Variable(random_normal([num_features, n_hidden])), dtype="float64"), trainable=True), 
+                "h2": tf.Variable(tf.cast(tf.Variable(random_normal([n_hidden, n_hidden])), dtype="float64"), trainable=True),
+                "out": tf.Variable(tf.cast(tf.Variable(random_normal([n_hidden, num_binary_columns])), dtype="float64"), trainable=True)
+            }
+            self.__biases = {
+                "b1": tf.Variable(tf.cast(tf.Variable(tf.zeros([n_hidden])), dtype="float64"), trainable=True),
+                "b2": tf.Variable(tf.cast(tf.Variable(tf.zeros([n_hidden])), dtype="float64"), trainable=True),
+                "out": tf.Variable(tf.cast(tf.Variable(tf.zeros([num_binary_columns])), dtype="float64"), trainable=True)
+            }
+            
+        else:
+
+            # We save some old weights and biases and use them to continue training. But we need to set some h1 and all out variables.
+            # Set h1 variables. We use old h1 tensor as a part of the new, possibly bigger h1 tensor.
+            random_normal = tf.random_normal_initializer()
+            temp_h1 = tf.Variable(
+                tf.cast(tf.Variable(random_normal([num_features, n_hidden])), dtype="float64"), trainable=True)
+            indices = [
+                [i, j]
+                for i in range(0, self.__weights["h1"].shape[0])
+                for j in range(0, self.__weights["h1"].shape[1])
+            ]
+            updates = tf.reshape(self.__weights["h1"], [-1])
+            self.__weights["h1"] = tf.tensor_scatter_nd_update(temp_h1, indices, updates)
+            self.__weights["h1"] = tf.Variable(self.__weights["h1"], trainable=True)
+            
+            # Set out variables.
+            self.__weights["out"] = tf.Variable(
+                tf.cast(tf.Variable(random_normal([n_hidden, num_binary_columns])), dtype="float64"), trainable=True)
+            self.__biases["out"] = tf.Variable(
+                tf.cast(tf.Variable(tf.zeros([num_binary_columns])), dtype="float64"), trainable=True)
+
         # Run training for the given number of steps.
         for index, (batch_x, batch_y) in enumerate(train_data.take(training_steps), start=1):
             self.__optimization(batch_x, batch_y)
@@ -192,12 +219,23 @@ class Picture_classifier:
         # Finally test model on validation set.
         pred = self.__neural_net(X_test)
         print(f"Test accuracy of Picture Classifier: {self.__accuracy(pred, y_test)}")
-                    
+        self.__features = self.__object_classifier.get_categories()
+                   
     # This private class method is the core of the picture classifier.
+    '''
     def __neural_net(self, input_data:tf.Tensor) -> tf.Tensor:      
         hidden_layer = tf.add(tf.matmul(input_data, self.__weights["h"]), self.__biases["b"])
         hidden_layer = tf.nn.sigmoid(hidden_layer)
         out_layer = tf.add(tf.matmul(hidden_layer, self.__weights["out"]), self.__biases["out"])
+        out_layer = tf.nn.softmax(out_layer)
+        return tf.where(out_layer < 0.5, 0.0, tf.where(out_layer >= 0.5, 1.0, out_layer))
+    '''
+    def __neural_net(self, input_data:tf.Tensor) -> tf.Tensor:      
+        hidden_layer1 = tf.add(tf.matmul(input_data, self.__weights["h1"]), self.__biases["b1"])
+        hidden_layer1 = tf.nn.relu(hidden_layer1)
+        hidden_layer2 = tf.add(tf.matmul(hidden_layer1, self.__weights["h2"]), self.__biases["b2"])
+        hidden_layer2 = tf.nn.sigmoid(hidden_layer2)
+        out_layer = tf.add(tf.matmul(hidden_layer2, self.__weights["out"]), self.__biases["out"])
         out_layer = tf.nn.softmax(out_layer)
         return tf.where(out_layer < 0.5, 0.0, tf.where(out_layer >= 0.5, 1.0, out_layer))
     
@@ -237,7 +275,7 @@ class Picture_classifier:
         return row_of_features
     
     # Private class method to parse one row of features as a tensor.
-    def __parse_recognized_objects_tensor(self, recognized_objects:list) -> tf.Tensor:
+    def __parse_recognized_objects_tensor(self, recognized_objects:list) -> tf.Variable:
         row_of_features = []
         feature_titles = self.__object_classifier.get_categories()
         for index1 in range(0, len(feature_titles), 1):
@@ -247,16 +285,19 @@ class Picture_classifier:
                 feature = f"{item2.main_category}:{item2.sub_category}"
                 if item1 == feature:
                     probability = row_of_features[index1]
+                    # probability = item2.probability
                     row_of_features[index1] = item2.probability + probability
         feature_tensor = tf.Variable(initial_value=[row_of_features], shape=[1, len(self.__features)])
         return feature_tensor
-
+    
     # Private class method to decode binary encoded data to int.
     def __binary_decode(self, bit_array:list) -> int:
-        integer_value = 0    
+        integer_value = -1
+        index = 0
         for bit in bit_array:
-            bit = int(bit)    
-            integer_value = (integer_value << 1) | bit    
+            bit = int(bit)  
+            integer_value = integer_value + bit * pow(2, index)
+            index = index + 1
         return integer_value
        
     # Public static class method which deserializes this class instance from file.
@@ -265,16 +306,22 @@ class Picture_classifier:
         try:
             with open(constants.PICTURE_CLASSIFIER_NAME, "rb") as in_file:
                 return pickle.load(in_file)
-        except:
+        except Exception as err:
             return None
 
-    # Public class method to move pictures located in input_path folder as classified folders in output_path folder.
+    # Public class method to move pictures located in input_path folder as classified folders into output_path folder.
     def classify_pictures(self, input_path:str, output_path:str) -> None:
-        for picture in os.listdir(input_path):
+        input_path = input_path.strip('\"')
+        output_path = output_path.strip('\"')
+        pictures = os.listdir(input_path)
+        if len(pictures) == 0:
+            print(f"The folder does not contain files: {input_path}")
+            return
+
+        for picture in pictures:
             picture = os.path.join(input_path, picture)
             if os.path.isfile(picture):
-                recognized_objects = self.__object_classifier.multi_tile_recognize_objects(os.path.join(input_path, picture))
-                row_of_features = self.__parse_recognized_objects_dict(recognized_objects)
+                recognized_objects = self.__object_classifier.multi_tile_recognize_objects(picture)
                 feature_tensor = tf.cast(self.__parse_recognized_objects_tensor(recognized_objects), dtype="float64")
                 pred = self.__neural_net(feature_tensor)
                 
@@ -285,19 +332,21 @@ class Picture_classifier:
                     class_name = self.__classes[decoded]
                 else:
                     
-                    # If index is too big, put the picture to the "Unsorted pictures" folder.
+                    # If index is too big, put the picture to the "Unsorted pictures" folder
                     class_name = "Unsorted pictures"
                 
-                # Create a folder name <class_name>, if it doesn't exist.
+				# Create a folder name <class_name>, if it doesn't exist.
                 directory = os.path.join(output_path, class_name)
                 if not os.path.isdir(directory):
-                    os.mkdir(directory)
+                   os.mkdir(directory)
                     
-                # Move picture from input_path to directory.
+				# Move picture from input_path to directory.
                 shutil.move(os.path.join(input_path, picture), directory)    
                 
-    # Public class method to train model.
-    def train_picture_classifier(self, path:str, destroy_previous) -> None:
-        self.__create_picture_classifier_model(path, destroy_previous)
-    
-
+    # Public class method to train model. This doesn't create a new Picture_classifier class instance.
+    def train_picture_classifier_model(self, path:str, destroy_previous:bool, impertinent:bool) -> None:
+        path = path.strip('\"')
+        self.__classes = self.__get_classes(path)
+        if self.__object_classifier == None:
+            self.__object_classifier = Object_classifier()
+        self.__create_or_train_picture_classifier_model(path, destroy_previous, impertinent)

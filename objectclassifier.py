@@ -16,14 +16,9 @@ class Object_classifier:
         self.__object_finder_names = []
         self.__deserialize_object_finders()
      
-    # Before destructing Object_Recognizer instance we need to serialize all image classifiers to files.     
+    # Before destructing Object_classifier instance we need to serialize all image classifiers to files.     
     def __del__(self) -> None:
         self.__serialize_object_finders()
-        
-    # Alla oleva on testausta varten!
-    def serialize_object_finders(self) -> None:
-        self.__serialize_object_finders()
-    # Yllä oleva on testausta varten!
     
     # Private class method which serializes object finders into files.
     def __serialize_object_finders(self) -> None:
@@ -55,45 +50,46 @@ class Object_classifier:
                     raise IOError(f"Failed to deserialize image classifier {object_finder_name}.")               
     
     # Public class method to create a new object finder or teach old.
-    def make_object_finder(self, path:str, destroy_previous=False) -> bool:
+    def make_object_finder(self, path:str, destroy_previous=False, impertinent:bool=False) -> bool:
         try:
             object_finder_name = os.path.basename(path)
             object_finder_name = object_finder_name.split(".")[0]
         except:
             return False
         if not destroy_previous:
+
+            # If object finder already exists, we use that instead of creating a new one.
             try:
                 index = self.__object_finder_names.index(object_finder_name)
                 object_finder = self.__object_finders[index]
-                object_finder.add_more_training(path)
+                # object_finder.add_more_training(path, impertinent)
                 return True
             except:
-                temp = Object_finder(path)
+                temp = Object_finder(path, impertinent)
                 self.__object_finder_names.append(temp.get_name())
                 self.__object_finders.append(temp)
                 return True
         else:
+
+            # If object finder already exists, we destroy it and create a new one from scratch.
             try:
                 index = self.__object_finder_names.index(object_finder_name)
                 self.__object_finder_names.pop(index)
                 self.__object_finders.pop(index)
             except:
                 pass
-            temp = Object_finder(path)
+            temp = Object_finder(path, impertinent)
             self.__object_finder_names.append(temp.get_name())
             self.__object_finders.append(temp)        
             return True
         
     # Public class method to recognize objects from an image. Use file- or url- string path for image parameter. 
     def recognize_objects_str(self, image:str) -> tuple:
-        objects = []
-        index = 0
-        for classifier in self.__object_finders:
-            temp = classifier.do_classification_str(image)
-            if temp is not None:
-                objects.append(temp)
-                index += 1
-        return objects, index
+        try:
+            img = Image.open(image) 
+        except:
+            raise ValueError("Cannot open or find file.")
+        return self.recognize_objects_image(img)
     
     # Public class method to recognize objects from an image. Use Image type bitmap for image parameter.
     def recognize_objects_image(self, image:Image) -> tuple:
@@ -101,7 +97,7 @@ class Object_classifier:
         index = 0
         for classifier in self.__object_finders:
             temp = classifier.do_classification_image(image)
-            if temp is not None:
+            if temp != None and temp.sub_category != constants.OBJECT_CLASSIFIER_IMPERTINENT_CLASS_NAME:
                 objects.append(temp)
                 index += 1
         return objects, index
@@ -143,7 +139,7 @@ class Object_classifier:
     # Public class method to do multi-tile scan for an image. The size of an object matters: if you have several
     # flowers in a picture, for example, but we are looking for a picture size flower, we need to crop a right size
     # picture from original picture to find the flower.
-    def multi_tile_recognize_objects(self, image:PIL) -> list:
+    def multi_tile_recognize_objects(self, image:str) -> list:
         objects = []
         try:
             img = Image.open(image) 
@@ -156,7 +152,7 @@ class Object_classifier:
         else:
             tile_size = h
             
-        # This is the whole image, we will always take all objects form here.
+        # This is the whole image, we will always take all objects from here.
         objects.extend(self.recognize_objects_image(img)[0])
         
         # From tiles we take only those objects, which belong to the most successfull tile set.
@@ -176,6 +172,7 @@ class Object_classifier:
                 besthits = hits
             tile_size = int((tile_size - tile_size % constants.OBJECT_MULTI_TILE_SIZE_MULTIPLIER) / constants.OBJECT_MULTI_TILE_SIZE_MULTIPLIER)
         objects.extend(besthits)
+		
         return objects
             
     # Public class method to get all category names of object finders.
@@ -187,11 +184,3 @@ class Object_classifier:
             for sub in sub_categories:
                 categories.append(f"{main_category}:{sub}")
         return categories
-            
-            
-            
-            
-            
-        
-        
-        

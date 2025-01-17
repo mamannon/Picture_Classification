@@ -1,3 +1,4 @@
+from genericpath import isdir
 import pandas as pa
 import numpy as np
 import PIL
@@ -12,8 +13,10 @@ from PIL import Image
 import tensorflow as tf
 from tensorflow import keras
 from keras import Sequential, layers
+from image_dataset_utils import paths_and_labels_to_dataset
+from image_dataset_utils import image_dataset_from_directory
 
-from constants import OBJECT_IMG_HEIGHT, OBJECT_IMG_WIDTH, OBJECT_CLASSIFIER_FOLDER, OBJECT_BATCH_SIZE, OBJECT_EPOCHS, OBJECT_THRESHOLD
+from constants import OBJECT_CLASSIFIER_IMPERTINENT_CLASS_NAME, OBJECT_IMG_HEIGHT, OBJECT_IMG_WIDTH, OBJECT_CLASSIFIER_FOLDER, OBJECT_BATCH_SIZE, OBJECT_EPOCHS, OBJECT_THRESHOLD
 
 class Recognized_object:
     
@@ -25,16 +28,29 @@ class Recognized_object:
 class Object_finder:
     
     # Constructor creates a new image classifier and does training of AI of this classifier instance.
-    def __init__(self, path:str) -> None:
+    def __init__(self, path:str, add_impertinent:bool=False) -> None:
         
         # Extract the data and name of this image classifier from the path.
         object_finder_name, data_dir = self.__get_dataset(path)
         self.__object_finder_name = object_finder_name
         
-        # Divide data to the training and test sets.
-        train_ds, val_ds, class_names = self.__divide_dataset(data_dir)
-        num_classes = len(class_names)
-        self.__sub_categories = class_names
+        # Divide data to the training and test sets and get class names.
+        train_ds, val_ds, sub_categories = self.__divide_dataset(data_dir)
+        num_classes = len(sub_categories)
+        self.__sub_categories = sub_categories
+                
+        # Add "not classified" ie. impertinent training data to the training set. Impertinent data belongs to training data of
+        # possible other image classifiers. Current image classifier should not classify those objects.
+        if add_impertinent:
+            head, not_needed = os.path.split(data_dir)
+            head, object_finder = os.path.split(head)
+            dirs = os.listdir(head)
+            for directory in dirs:
+                if (directory != object_finder):
+                    directory = os.path.join(head, directory)
+                    train_ds, sub_categories = self.__add_impertinent_pictures(directory, train_ds)
+                    self.__sub_categories = sub_categories
+            num_classes = len(self.__sub_categories)
         
         # Scale and shuffle data.
         AUTOTUNE = tf.data.AUTOTUNE
@@ -44,6 +60,7 @@ class Object_finder:
         normalized_ds = train_ds.map(lambda x, y: (normalization_layer(x), y))
         
         # Create a new neuro network model.
+        '''
         self.__model = Sequential([
             layers.Rescaling(1./255, input_shape=(OBJECT_IMG_HEIGHT, OBJECT_IMG_WIDTH, 3)),
             layers.Conv2D(16, 3, padding='same', activation='relu'),
@@ -55,13 +72,33 @@ class Object_finder:
             layers.Flatten(),
             layers.Dense(128, activation='relu'),
             layers.Dense(num_classes)])
+        '''
+        self.__model = Sequential([
+            layers.Rescaling(1./255, input_shape=(OBJECT_IMG_HEIGHT, OBJECT_IMG_WIDTH, 3)),
+
+            layers.Conv2D(32, kernel_size=(3,3), activation='relu'),
+            layers.MaxPooling2D(2, 2),
+
+            layers.Conv2D(64, kernel_size=(3,3), activation='relu'),
+            layers.MaxPooling2D(2,2),
+    
+            layers.Conv2D(128, kernel_size=(3,3), activation='relu'),
+            layers.MaxPooling2D(2,2),
+    
+            layers.Conv2D(128, kernel_size=(3,3), activation='relu'),
+            layers.MaxPooling2D(2,2),
+    
+            layers.Flatten(),
+            layers.Dense(512, activation='relu'),
+            layers.Dense(num_classes)
+        ])
         
         # Train neuro network model.
         self.__model.compile(optimizer='adam',
               loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
               metrics=['accuracy'])
         self.__model.summary()
-        history = self.__model.fit(train_ds, validation_data=val_ds, epochs=OBJECT_EPOCHS)
+        self.__model.fit(train_ds, validation_data=val_ds, epochs=OBJECT_EPOCHS)
 
     # Private class method to extract data from some location.
     def __get_dataset(self, path:str) -> tuple:
@@ -90,7 +127,7 @@ class Object_finder:
             return object_finder_name, data_dir
         elif os.path.isfile(path):
             
-            # We have a file path where to get one picture.
+            # We have a file path where to get one file. Not implemented.
             pass
         else:
             return None
@@ -98,22 +135,25 @@ class Object_finder:
     # Private class method to divide training data to training and testing parts
     def __divide_dataset(self, data_dir:pathlib.Path) -> tuple:
         
+        # Code below defines class names according to the directory names.
         try:  
-            train_ds = tf.keras.utils.image_dataset_from_directory(
+            train_ds = image_dataset_from_directory(    
             data_dir,
-            #validation_split=0.2,   # KORJAA Tätä riviä pitää käyttää tuotannossa.
-            validation_split=0.5,    # KORJAA Tätä riviä pitää käyttää ehdottoman minimaalisen treenidatan kanssa.
+            validation_split=0.2,
             subset="training",
+            labels="inferred",
             seed=123,
+            color_mode="rgb",
             image_size=(OBJECT_IMG_HEIGHT, OBJECT_IMG_WIDTH),
             batch_size=OBJECT_BATCH_SIZE)
         
-            val_ds = tf.keras.utils.image_dataset_from_directory(
+            val_ds = image_dataset_from_directory(
             data_dir,
-            #validation_split=0.2,
-            validation_split=0.5,
+            validation_split=0.2,
             subset="validation",
+            labels="inferred",
             seed=123,
+            color_mode="rgb",
             image_size=(OBJECT_IMG_HEIGHT, OBJECT_IMG_WIDTH),
             batch_size=OBJECT_BATCH_SIZE)
         except Exception as err:
@@ -121,30 +161,81 @@ class Object_finder:
             raise IOError(f"Failed to read train data.") 
         class_names = train_ds.class_names
         return train_ds, val_ds, class_names
-       
-    # Public class method to train more existing model.
-    def add_more_training(self, path:str):
-        
-        # Extract the data and name of this image classifier from the path.
-        object_finder_name, data_dir = self.__get_dataset(path)
-        self.__object_finder_name = object_finder_name
-        
-        # Divide data to the training and test sets.
-        train_ds, val_ds, class_names = self.__divide_dataset(data_dir)
-        num_classes = len(class_names)
-        self.__sub_categories = class_names
-        
-        # Scale and shuffle data.
-        AUTOTUNE = tf.data.AUTOTUNE
-        train_ds = train_ds.cache().shuffle(1000).prefetch(buffer_size=AUTOTUNE)
-        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
-        normalization_layer = layers.Rescaling(1./255)
-        normalized_ds = train_ds.map(lambda x, y: (normalization_layer(x), y))
-        
-        # Train neuro network model.
-        self.__model.summary()
-        history = self.__model.fit(train_ds, validation_data=val_ds, epochs=OBJECT_EPOCHS)
+    
+    # Private class method to increase dataset class label number by one.
+    def __increase_label_number(data:np.array, label:int) -> tuple:
+        new_label = label + 1
+        return data, new_label
 
+    # Private class method to load all files below a root folder recursively into a dataset. Loaded files will be classified as 
+    # unsorted. Extends the given dataset picture_list with the new pictures.
+    def __add_impertinent_pictures(self, directory:pathlib, picture_list:tf.data.Dataset) -> tuple:
+        new_picture_list = None
+        class_names_list = None
+
+        try:
+
+            # Create filepath list, label list and class names list.
+            string_glob = os.path.join(directory, "*.jpg")           
+            filenames_as_tensor = tf.io.matching_files(string_glob)
+            file_path_list = filenames_as_tensor.numpy().tolist()
+            label_list = [0] * len(file_path_list)
+            class_names_list = picture_list.class_names
+
+            # Add impertinent class into picture_list dataset and class_names_list if it is not there.
+            try:
+                class_names_list.index(OBJECT_CLASSIFIER_IMPERTINENT_CLASS_NAME)
+            except:    
+                temp = [OBJECT_CLASSIFIER_IMPERTINENT_CLASS_NAME]
+                if class_names_list != None:
+                    temp.extend(class_names_list)
+                class_names_list = temp
+                picture_list.class_names = class_names_list
+                picture_list = picture_list.map(self.__increase_label_number)
+
+            # Create a new dataset with the new pictures.
+            dataset_pictures = paths_and_labels_to_dataset(
+                image_paths = file_path_list,
+                image_size = [OBJECT_IMG_HEIGHT, OBJECT_IMG_WIDTH],
+                num_channels = 3,
+                labels = label_list,
+                label_mode = "int",
+                num_classes = len(class_names_list),
+                interpolation = "bilinear",
+                data_format = "channels_last",
+                crop_to_aspect_ratio=False,
+                pad_to_aspect_ratio=False,
+                shuffle=False,
+                shuffle_buffer_size=None,
+                seed=None)           
+            dataset_pictures.file_paths = file_path_list  
+            dataset_pictures = dataset_pictures.batch(OBJECT_BATCH_SIZE)
+            dataset_pictures = dataset_pictures.prefetch(tf.data.AUTOTUNE)
+            dataset_pictures.class_names = class_names_list
+
+            # Concatenate the new dataset with the old one.
+            new_picture_list = dataset_pictures.concatenate(picture_list)
+            new_picture_list.class_names = class_names_list
+
+        except Exception as err:
+
+            # If something failed, return the old dataset.
+            if isinstance(picture_list, tf.data.Dataset):
+                new_picture_list = picture_list
+                new_picture_list.class_names = class_names_list
+            else:
+                raise ValueError("Invalid picture_list.")
+
+        # Go through all subdirectories and recursively add pictures to the dataset.
+        dirs = os.listdir(directory)
+        for folder in dirs:
+            folder = os.path.join(directory, folder)
+            if os.path.isdir(folder):
+                new_picture_list, class_names = self.__add_impertinent_pictures(folder, new_picture_list)
+                new_picture_list.class_names = class_names
+
+        return new_picture_list, new_picture_list.class_names
+        
     # Public class method to return the name of this image classifier I.E. the main category.
     def get_name(self) -> str:
         return self.__object_finder_name
@@ -165,7 +256,7 @@ class Object_finder:
         score = tf.nn.softmax(probabilities[0])
         if np.max(score) > OBJECT_THRESHOLD:
             sub_category = self.__sub_categories[np.argmax(score)]
-            return Recognized_object(self.__object_finder_name, sub_category, np.max(score))
+            return Recognized_object(self.__object_finder_name, sub_category, float(np.max(score)))
         else:
             return None
         
@@ -179,6 +270,6 @@ class Object_finder:
         score = tf.nn.softmax(probabilities[0])
         if np.max(score) > OBJECT_THRESHOLD:
             sub_category = self.__sub_categories[np.argmax(score)]
-            return Recognized_object(self.__object_finder_name, sub_category, np.max(score))
+            return Recognized_object(self.__object_finder_name, sub_category, float(np.max(score)))
         else:
             return None

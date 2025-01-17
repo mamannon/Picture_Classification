@@ -24,6 +24,8 @@
     <Compile Include="constants.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="dataset_utils.py" />
+    <Compile Include="image_dataset_utils.py" />
     <Compile Include="main.py" />
     <Compile Include="objectclassifier.py">
       <SubType>Code</SubType>
