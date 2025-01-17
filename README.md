@@ -10,7 +10,7 @@ At the moment object detectors work as they should, but actual picture classific
 
 - Current implementation applies transfer learning to the picture classification model, so when you create a new object detector model, picture classification model doesn't need to be created from scratch. This is how it is implemented now, although it should not be possible: it is possible to add new classes to the model, but it is not possible to add new features to the dataset without creating the model from scratch.
 
-I don't like the idea to add extra training material or do everything from scratch every time you add new object detector model, so perhaps I implement picture classification without machine learning in the future, if that is possible. 
+I don't like the idea to add extra training material or train everything from scratch every time you add new object detector model, so perhaps I implement picture classification without machine learning in the future, if that is possible. 
 
 ## Principle
 
